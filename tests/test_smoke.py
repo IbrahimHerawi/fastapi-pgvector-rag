@@ -16,7 +16,8 @@ def test_can_import_rag_api_modules() -> None:
         "rag_api.schemas",
         "rag_api.services",
         "rag_api.api",
-        "rag_api.api.routers",
+        "rag_api.api.v1",
+        "rag_api.api.v1.routers",
     )
     for module_name in modules:
         module = importlib.import_module(module_name)
@@ -36,7 +37,7 @@ def test_can_import_app_module() -> None:
 
 @pytest.mark.asyncio
 async def test_health_endpoint_smoke(api_client) -> None:
-    response = await api_client.get("/health")
+    response = await api_client.get("/api/v1/health")
     if response.status_code == 404:
-        pytest.skip("/health endpoint is not implemented yet.")
+        pytest.skip("/api/v1/health endpoint is not implemented yet.")
     assert response.status_code == 200

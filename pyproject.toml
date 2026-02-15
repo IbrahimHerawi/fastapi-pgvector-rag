@@ -5,6 +5,7 @@ description = "FastAPI + pgvector RAG API skeleton."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "fastapi>=0.129.0",
     "pydantic-settings>=2.7.0",
 ]
 

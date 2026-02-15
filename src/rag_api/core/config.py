@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_ENV: str = "dev"
+    API_V1_PREFIX: str = "/api/v1"
     API_KEY: Optional[str] = None
 
     # Infrastructure defaults aligned with local Docker service names.
