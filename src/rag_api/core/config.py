@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Infrastructure defaults aligned with local Docker service names.
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@postgres:5432/rag"
+    TEST_DATABASE_URL: Optional[str] = None
     OLLAMA_BASE_URL: str = "http://ollama:11434"
 
     # Models

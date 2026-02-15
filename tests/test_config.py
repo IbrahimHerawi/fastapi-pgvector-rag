@@ -7,6 +7,7 @@ from rag_api.core.config import Settings
 ENV_KEYS = (
     "APP_ENV",
     "DATABASE_URL",
+    "TEST_DATABASE_URL",
     "OLLAMA_BASE_URL",
     "OLLAMA_CHAT_MODEL",
     "OLLAMA_EMBED_MODEL",
@@ -28,6 +29,7 @@ def test_settings_defaults_load(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.APP_ENV == "dev"
     assert settings.DATABASE_URL == "postgresql+psycopg://postgres:postgres@postgres:5432/rag"
+    assert settings.TEST_DATABASE_URL is None
     assert settings.OLLAMA_BASE_URL == "http://ollama:11434"
     assert settings.OLLAMA_CHAT_MODEL == "llama3.1:8b"
     assert settings.OLLAMA_EMBED_MODEL == "nomic-embed-text"
@@ -43,6 +45,7 @@ def test_settings_defaults_load(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_settings_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/custom")
+    monkeypatch.setenv("TEST_DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/custom_test")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
     monkeypatch.setenv("OLLAMA_CHAT_MODEL", "qwen2.5:7b")
     monkeypatch.setenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
@@ -58,6 +61,7 @@ def test_settings_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.APP_ENV == "test"
     assert settings.DATABASE_URL == "postgresql+psycopg://user:pass@localhost:5432/custom"
+    assert settings.TEST_DATABASE_URL == "postgresql+psycopg://user:pass@localhost:5432/custom_test"
     assert settings.OLLAMA_BASE_URL == "http://localhost:11434"
     assert settings.OLLAMA_CHAT_MODEL == "qwen2.5:7b"
     assert settings.OLLAMA_EMBED_MODEL == "mxbai-embed-large"
