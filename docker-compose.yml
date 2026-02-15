@@ -1,0 +1,55 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fastapi-pgvector-rag:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/rag
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "8000:8000"
+    command: ["uv", "run", "--no-dev", "python", "-m", "uvicorn", "rag_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    image: fastapi-pgvector-rag:local
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/rag
+      OLLAMA_BASE_URL: http://ollama:11434
+    command: ["uv", "run", "--no-dev", "python", "-m", "rag_api.worker"]
+
+volumes:
+  pgdata:
+  ollama_data:
