@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=True,
         extra="ignore",
+        env_file=".env",
+        env_file_encoding="utf-8",
     )
 
     # Application

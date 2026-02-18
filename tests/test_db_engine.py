@@ -3,6 +3,8 @@ import os
 
 import pytest
 
+from rag_api.core.config import get_settings
+
 
 def _require_db_prereqs() -> None:
     pytest.importorskip("sqlalchemy")
@@ -10,7 +12,7 @@ def _require_db_prereqs() -> None:
 
 @pytest.fixture
 def test_database_url() -> str:
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = os.getenv("TEST_DATABASE_URL") or get_settings().TEST_DATABASE_URL
     if not database_url:
         pytest.skip("TEST_DATABASE_URL is not set.")
     return database_url
@@ -29,7 +31,7 @@ async def test_engine_uses_test_database_url(
 
     try:
         assert db.engine is not None
-        assert str(db.engine.url) == test_database_url
+        assert db.engine.url.render_as_string(hide_password=False) == test_database_url
     finally:
         if db.engine is not None:
             await db.engine.dispose()

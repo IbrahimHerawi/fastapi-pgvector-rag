@@ -7,6 +7,15 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
+from rag_api.core.config import get_settings
+
+
+def _resolve_test_database_url() -> str | None:
+    database_url = os.getenv("TEST_DATABASE_URL")
+    if database_url:
+        return database_url
+    return get_settings().TEST_DATABASE_URL
+
 
 @pytest.fixture(autouse=True)
 def settings_override(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -22,9 +31,16 @@ def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
     loop.close()
 
 
+@pytest.fixture(scope="session")
+def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
+    if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+        return asyncio.WindowsSelectorEventLoopPolicy()
+    return asyncio.get_event_loop_policy()
+
+
 @pytest_asyncio.fixture
 async def db_engine() -> AsyncIterator[Any]:
-    database_url = os.getenv("TEST_DATABASE_URL")
+    database_url = _resolve_test_database_url()
     if not database_url:
         pytest.skip("TEST_DATABASE_URL is not set.")
 

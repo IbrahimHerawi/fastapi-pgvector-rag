@@ -1,14 +1,18 @@
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE}
     environment:
-      POSTGRES_DB: rag
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/docker/20-init-test-db.sh:/docker-entrypoint-initdb.d/20-init-test-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d rag"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -30,9 +34,9 @@ services:
       db:
         condition: service_healthy
     environment:
-      APP_ENV: docker
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/rag
-      OLLAMA_BASE_URL: http://ollama:11434
+      APP_ENV: ${APP_ENV_DOCKER}
+      DATABASE_URL: ${DOCKER_DATABASE_URL}
+      OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL}
     ports:
       - "8000:8000"
     command: ["uv", "run", "--no-dev", "python", "-m", "uvicorn", "rag_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -45,9 +49,9 @@ services:
       api:
         condition: service_started
     environment:
-      APP_ENV: docker
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/rag
-      OLLAMA_BASE_URL: http://ollama:11434
+      APP_ENV: ${APP_ENV_DOCKER}
+      DATABASE_URL: ${DOCKER_DATABASE_URL}
+      OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL}
     command: ["uv", "run", "--no-dev", "python", "-m", "rag_api.worker"]
 
 volumes:

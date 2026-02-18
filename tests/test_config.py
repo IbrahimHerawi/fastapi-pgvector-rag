@@ -25,7 +25,7 @@ def test_settings_defaults_load(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.APP_ENV == "dev"
     assert settings.DATABASE_URL == "postgresql+psycopg://postgres:postgres@postgres:5432/rag"
@@ -57,7 +57,7 @@ def test_settings_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAX_DOC_CHARS", "50000")
     monkeypatch.setenv("API_KEY", "secret-token")
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.APP_ENV == "test"
     assert settings.DATABASE_URL == "postgresql+psycopg://user:pass@localhost:5432/custom"
@@ -78,4 +78,14 @@ def test_settings_invalid_types_raise(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REQUEST_TIMEOUT_S", "not-an-int")
 
     with pytest.raises(ValidationError):
-        Settings()
+        Settings(_env_file=None)
+
+
+def test_settings_reads_dotenv_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    settings = Settings(_env_file=".env.example")
+    assert settings.APP_ENV == "dev"
+    assert settings.DATABASE_URL == "postgresql+psycopg://postgres:postgres@127.0.0.1:55432/rag"
+    assert settings.TEST_DATABASE_URL == "postgresql+psycopg://postgres:postgres@127.0.0.1:55432/rag_test"
