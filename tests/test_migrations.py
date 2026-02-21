@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 EXPECTED_TABLES = {"documents", "chunks", "query_logs", "ingestion_jobs"}
+EXPECTED_INDEXES = {"ix_chunks_embedding_hnsw_cosine", "ix_chunks_document_id"}
 
 
 def _quote_ident(identifier: str) -> str:
@@ -86,3 +87,24 @@ def test_expected_tables_exist(migrated_database_url: str) -> None:
         engine.dispose()
 
     assert EXPECTED_TABLES.issubset(table_names)
+
+
+def test_expected_indexes_exist(migrated_database_url: str) -> None:
+    engine = create_engine(migrated_database_url)
+    try:
+        with engine.connect() as conn:
+            index_names = set(
+                conn.execute(
+                    text(
+                        """
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE schemaname = 'public' AND tablename = 'chunks'
+                        """
+                    )
+                ).scalars()
+            )
+    finally:
+        engine.dispose()
+
+    assert EXPECTED_INDEXES.issubset(index_names)
