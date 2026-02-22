@@ -11,7 +11,11 @@ from rag_api.api.deps import require_api_key
 from rag_api.core.config import get_settings
 from rag_api.core.db import get_session
 from rag_api.models.schema import Document, IngestionJob
-from rag_api.schemas import DocumentCreateRequest, DocumentMetadataResponse
+from rag_api.schemas import (
+    DocumentCreateRequest,
+    DocumentJobStatusResponse,
+    DocumentMetadataResponse,
+)
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
@@ -127,4 +131,35 @@ async def get_document(
         document,
         ingestion_status,
         include_content=include_content,
+    )
+
+
+@router.get(
+    "/documents/{document_id}/status",
+    response_model=DocumentJobStatusResponse,
+    response_model_exclude_none=True,
+)
+async def get_document_status(
+    document_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> DocumentJobStatusResponse:
+    ingestion_job_query = select(IngestionJob.status, IngestionJob.error).where(
+        IngestionJob.document_id == document_id
+    )
+    ingestion_job_result = await session.execute(ingestion_job_query)
+    ingestion_job = ingestion_job_result.first()
+
+    if ingestion_job is None:
+        document = await session.get(Document, document_id)
+        if document is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found.",
+            )
+        return DocumentJobStatusResponse(status="pending")
+
+    ingestion_status, error = ingestion_job
+    return DocumentJobStatusResponse(
+        status=ingestion_status,
+        error=error if ingestion_status == "failed" else None,
     )

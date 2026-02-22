@@ -52,6 +52,11 @@ class DocumentResponse(DocumentMetadataResponse):
     content: ContentStr
 
 
+class DocumentJobStatusResponse(APIModel):
+    status: StatusStr
+    error: NonEmptyStr | None = None
+
+
 class Source(APIModel):
     chunk_id: UUID
     document_id: UUID
