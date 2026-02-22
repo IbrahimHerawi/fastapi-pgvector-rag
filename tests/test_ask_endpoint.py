@@ -182,4 +182,7 @@ async def test_ask_empty_question_returns_400(
         )
 
     assert response.status_code == 400
-    assert "Invalid ask payload" in response.json()["detail"]
+    body = response.json()
+    assert body["code"] == "bad_request"
+    assert "Invalid ask payload" in body["message"]
+    assert body["request_id"]

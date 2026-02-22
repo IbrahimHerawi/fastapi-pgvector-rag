@@ -91,4 +91,7 @@ async def test_create_document_rejects_content_exceeding_max_size(
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
-    assert "maximum size" in response.json()["detail"]
+    body = response.json()
+    assert body["code"] == "bad_request"
+    assert "maximum size" in body["message"]
+    assert body["request_id"]

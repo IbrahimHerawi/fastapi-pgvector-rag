@@ -5,7 +5,7 @@ from time import perf_counter
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rag_api.api.deps import require_api_key
 from rag_api.core.config import get_settings
 from rag_api.core.db import get_session
+from rag_api.core.errors import BadRequest, ExternalServiceUnavailable, NotFound
 from rag_api.models.schema import Chunk, Document, IngestionJob, QueryLog
 from rag_api.schemas import (
     AskRequest,
@@ -24,7 +25,7 @@ from rag_api.schemas import (
     Source,
 )
 from rag_api.services.generation import generate_answer
-from rag_api.services.ollama_client import OllamaClient
+from rag_api.services.ollama_client import OllamaClient, OllamaClientError
 from rag_api.services.retrieval import MAX_RETRIEVAL_TOP_K, retrieve_chunks
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
@@ -44,9 +45,8 @@ async def create_document(
 ) -> dict[str, str]:
     settings = get_settings()
     if len(payload.content) > settings.MAX_DOC_CHARS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"content exceeds maximum size ({settings.MAX_DOC_CHARS} characters).",
+        raise BadRequest(
+            f"content exceeds maximum size ({settings.MAX_DOC_CHARS} characters)."
         )
 
     content_hash = sha256(payload.content.encode("utf-8")).hexdigest()
@@ -144,10 +144,7 @@ async def get_document(
     result = await session.execute(query)
     row = result.first()
     if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found.",
-        )
+        raise NotFound("Document not found.")
 
     document, ingestion_status = row
     return _serialize_document_metadata(
@@ -175,10 +172,7 @@ async def get_document_status(
     if ingestion_job is None:
         document = await session.get(Document, document_id)
         if document is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Document not found.",
-            )
+            raise NotFound("Document not found.")
         return DocumentJobStatusResponse(status="pending")
 
     ingestion_status, error = ingestion_job
@@ -220,10 +214,7 @@ async def get_query(
 ) -> QueryLogResponse:
     query_log = await session.get(QueryLog, query_id)
     if query_log is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Query not found.",
-        )
+        raise NotFound("Query not found.")
 
     return _serialize_query_log(query_log)
 
@@ -268,24 +259,21 @@ async def ask_question(
     except ValidationError as exc:
         first_error = exc.errors()[0] if exc.errors() else {}
         message = first_error.get("msg", "Invalid ask payload.")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid ask payload: {message}",
-        ) from exc
+        raise BadRequest(f"Invalid ask payload: {message}") from exc
 
     question = request.question
     top_k = _resolve_top_k(request.top_k)
     request_started_at = perf_counter()
     settings = get_settings()
 
-    async with OllamaClient() as ollama_client:
-        query_vectors = await ollama_client.embed_texts([question])
+    try:
+        async with OllamaClient() as ollama_client:
+            query_vectors = await ollama_client.embed_texts([question])
+    except OllamaClientError as exc:
+        raise ExternalServiceUnavailable("Ollama service unavailable.") from exc
 
     if not query_vectors:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Embedding service returned no vectors for question.",
-        )
+        raise ExternalServiceUnavailable("Embedding service returned no vectors for question.")
 
     retrieved_chunks = await retrieve_chunks(
         session=session,
@@ -310,7 +298,10 @@ async def ask_question(
             }
         )
 
-    answer = await generate_answer(question, retrieved_sources)
+    try:
+        answer = await generate_answer(question, retrieved_sources)
+    except OllamaClientError as exc:
+        raise ExternalServiceUnavailable("Ollama service unavailable.") from exc
 
     query_log = QueryLog(
         question=question,
