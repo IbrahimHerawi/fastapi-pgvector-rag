@@ -59,6 +59,11 @@ async def test_process_job_persists_expected_chunk_count(
     monkeypatch.setenv("CHUNK_MAX_CHARS", str(max_chars))
     monkeypatch.setenv("CHUNK_OVERLAP_CHARS", str(overlap_chars))
 
+    async def _fake_embed_texts(_self: object, texts: list[str]) -> list[list[float]]:
+        return [[0.01] * 768 for _ in texts]
+
+    monkeypatch.setattr("rag_api.worker.run.OllamaClient.embed_texts", _fake_embed_texts)
+
     content = (
         "Alpha line one.\n"
         "Alpha line two with extra text.\n\n"
@@ -102,6 +107,11 @@ async def test_process_job_persists_exact_chunk_offsets_and_text(
     monkeypatch.setenv("CHUNK_MAX_CHARS", str(max_chars))
     monkeypatch.setenv("CHUNK_OVERLAP_CHARS", str(overlap_chars))
 
+    async def _fake_embed_texts(_self: object, texts: list[str]) -> list[list[float]]:
+        return [[0.02] * 768 for _ in texts]
+
+    monkeypatch.setattr("rag_api.worker.run.OllamaClient.embed_texts", _fake_embed_texts)
+
     content = (
         "First paragraph begins with setup text.\n"
         "It includes a second sentence for better boundary choices.\n\n"
@@ -142,4 +152,4 @@ async def test_process_job_persists_exact_chunk_offsets_and_text(
         assert row.end_char == expected["end_char"]
         assert row.text == expected["text"]
         assert row.text == content[row.start_char : row.end_char]
-        assert row.embedding is None
+        assert row.embedding is not None

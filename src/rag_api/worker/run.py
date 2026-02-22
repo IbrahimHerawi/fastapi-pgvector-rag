@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import signal
+from collections.abc import Sequence
 from types import FrameType
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from rag_api.core.config import get_settings
 from rag_api.core.db import SessionLocal
 from rag_api.models.schema import Chunk, Document, IngestionJob
 from rag_api.services.chunking import chunk
+from rag_api.services.ollama_client import OllamaClient
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -23,6 +25,7 @@ PROCESSING_STATUS = "processing"
 DONE_STATUS = "done"
 FAILED_STATUS = "failed"
 DEFAULT_IDLE_BACKOFF_SECONDS = 1.0
+EMBED_BATCH_SIZE = 32
 
 _running = True
 
@@ -61,21 +64,8 @@ async def claim_pending_job(session: "AsyncSession") -> UUID | None:
     return job.id
 
 
-async def _set_job_status(
-    session: "AsyncSession",
-    job_id: UUID,
-    *,
-    status: str,
-    error: str | None = None,
-) -> None:
-    job = await session.get(IngestionJob, job_id)
-    if job is None:
-        await session.rollback()
-        return
-
-    job.status = status
-    job.error = error
-    await session.commit()
+def _to_vector_literal(vector: Sequence[float]) -> str:
+    return "[" + ",".join(format(value, ".15g") for value in vector) + "]"
 
 
 async def process_job(
@@ -83,7 +73,7 @@ async def process_job(
     *,
     session_factory: "async_sessionmaker[AsyncSession] | None" = None,
 ) -> None:
-    """Load document, chunk content, and persist chunk rows."""
+    """Chunk a document, embed pending chunks, and finalize job status."""
 
     active_session_factory = session_factory or _require_session_factory()
     settings = get_settings()
@@ -94,30 +84,93 @@ async def process_job(
             await session.rollback()
             return
 
-        document = await session.get(Document, job.document_id)
-        if document is None:
-            msg = f"Document not found for ingestion job {job_id}."
-            raise RuntimeError(msg)
+        try:
+            document = await session.get(Document, job.document_id)
+            if document is None:
+                msg = f"Document not found for ingestion job {job_id}."
+                raise RuntimeError(msg)
 
-        chunk_rows = chunk(
-            text=document.content,
-            max_chars=settings.CHUNK_MAX_CHARS,
-            overlap_chars=settings.CHUNK_OVERLAP_CHARS,
-        )
-
-        for item in chunk_rows:
-            session.add(
-                Chunk(
-                    document_id=document.id,
-                    chunk_index=item["chunk_index"],
-                    start_char=item["start_char"],
-                    end_char=item["end_char"],
-                    text=item["text"],
-                    embedding=None,
-                )
+            existing_chunk_result = await session.execute(
+                select(Chunk.id)
+                .where(Chunk.document_id == document.id)
+                .limit(1)
             )
+            has_chunks = existing_chunk_result.scalar_one_or_none() is not None
 
-        await session.commit()
+            if not has_chunks:
+                chunk_rows = chunk(
+                    text=document.content,
+                    max_chars=settings.CHUNK_MAX_CHARS,
+                    overlap_chars=settings.CHUNK_OVERLAP_CHARS,
+                )
+
+                for item in chunk_rows:
+                    session.add(
+                        Chunk(
+                            document_id=document.id,
+                            chunk_index=item["chunk_index"],
+                            start_char=item["start_char"],
+                            end_char=item["end_char"],
+                            text=item["text"],
+                            embedding=None,
+                        )
+                    )
+
+                await session.flush()
+
+            pending_result = await session.execute(
+                select(Chunk.id, Chunk.text)
+                .where(Chunk.document_id == document.id, Chunk.embedding.is_(None))
+                .order_by(Chunk.chunk_index.asc())
+            )
+            pending_chunks = pending_result.all()
+
+            if pending_chunks:
+                chunk_texts = [chunk_text for _chunk_id, chunk_text in pending_chunks]
+                vectors: list[list[float]] = []
+
+                async with OllamaClient() as ollama_client:
+                    for start in range(0, len(chunk_texts), EMBED_BATCH_SIZE):
+                        batch_texts = chunk_texts[start : start + EMBED_BATCH_SIZE]
+                        vectors.extend(await ollama_client.embed_texts(batch_texts))
+
+                if len(vectors) != len(pending_chunks):
+                    msg = (
+                        "Embedding count mismatch while processing job "
+                        f"{job_id}: expected {len(pending_chunks)}, got {len(vectors)}."
+                    )
+                    raise RuntimeError(msg)
+
+                payload = [
+                    {
+                        "chunk_id": chunk_id,
+                        "embedding": _to_vector_literal(vector),
+                    }
+                    for (chunk_id, _chunk_text), vector in zip(pending_chunks, vectors)
+                ]
+                await session.execute(
+                    text(
+                        "UPDATE chunks "
+                        "SET embedding = CAST(:embedding AS vector) "
+                        "WHERE id = :chunk_id"
+                    ),
+                    payload,
+                )
+
+            job.status = DONE_STATUS
+            job.error = None
+            await session.commit()
+        except Exception as exc:
+            await session.rollback()
+            failed_job = await session.get(IngestionJob, job_id)
+            if failed_job is None:
+                await session.rollback()
+                raise
+
+            failed_job.status = FAILED_STATUS
+            failed_job.error = str(exc)
+            await session.commit()
+            raise
 
 
 async def run_forever(
@@ -139,13 +192,8 @@ async def run_forever(
 
         try:
             await process_job(job_id, session_factory=active_session_factory)
-        except Exception as exc:
-            async with active_session_factory() as session:
-                await _set_job_status(session, job_id, status=FAILED_STATUS, error=str(exc))
+        except Exception:
             continue
-
-        async with active_session_factory() as session:
-            await _set_job_status(session, job_id, status=DONE_STATUS)
 
 
 def main() -> None:
