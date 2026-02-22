@@ -1,6 +1,7 @@
 """Versioned API routers."""
 
 from hashlib import sha256
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rag_api.api.deps import require_api_key
 from rag_api.core.config import get_settings
 from rag_api.core.db import get_session
-from rag_api.models.schema import Chunk, Document, IngestionJob
+from rag_api.models.schema import Chunk, Document, IngestionJob, QueryLog
 from rag_api.schemas import (
     AskRequest,
     AskResponse,
@@ -221,6 +222,8 @@ async def ask_question(
 
     question = request.question
     top_k = _resolve_top_k(request.top_k)
+    request_started_at = perf_counter()
+    settings = get_settings()
 
     async with OllamaClient() as ollama_client:
         query_vectors = await ollama_client.embed_texts([question])
@@ -256,6 +259,20 @@ async def ask_question(
 
     answer = await generate_answer(question, retrieved_sources)
 
+    query_log = QueryLog(
+        question=question,
+        answer=answer,
+        retrieved_chunk_ids=[str(chunk.id) for chunk in retrieved_chunks],
+        models={
+            "embed": settings.OLLAMA_EMBED_MODEL,
+            "chat": settings.OLLAMA_CHAT_MODEL,
+        },
+        latency_ms=int((perf_counter() - request_started_at) * 1000),
+    )
+    session.add(query_log)
+    await session.flush()
+    await session.commit()
+
     return AskResponse(
         answer=answer,
         sources=[
@@ -271,4 +288,5 @@ async def ask_question(
             )
             for source in retrieved_sources
         ],
+        query_log_id=query_log.id,
     )
