@@ -10,8 +10,10 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from rag_api.core.config import get_settings
 from rag_api.core.db import SessionLocal
-from rag_api.models.schema import IngestionJob
+from rag_api.models.schema import Chunk, Document, IngestionJob
+from rag_api.services.chunking import chunk
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -76,10 +78,46 @@ async def _set_job_status(
     await session.commit()
 
 
-async def process_job(job_id: UUID) -> None:
-    """Placeholder for actual ingestion processing logic."""
+async def process_job(
+    job_id: UUID,
+    *,
+    session_factory: "async_sessionmaker[AsyncSession] | None" = None,
+) -> None:
+    """Load document, chunk content, and persist chunk rows."""
 
-    _ = job_id
+    active_session_factory = session_factory or _require_session_factory()
+    settings = get_settings()
+
+    async with active_session_factory() as session:
+        job = await session.get(IngestionJob, job_id)
+        if job is None:
+            await session.rollback()
+            return
+
+        document = await session.get(Document, job.document_id)
+        if document is None:
+            msg = f"Document not found for ingestion job {job_id}."
+            raise RuntimeError(msg)
+
+        chunk_rows = chunk(
+            text=document.content,
+            max_chars=settings.CHUNK_MAX_CHARS,
+            overlap_chars=settings.CHUNK_OVERLAP_CHARS,
+        )
+
+        for item in chunk_rows:
+            session.add(
+                Chunk(
+                    document_id=document.id,
+                    chunk_index=item["chunk_index"],
+                    start_char=item["start_char"],
+                    end_char=item["end_char"],
+                    text=item["text"],
+                    embedding=None,
+                )
+            )
+
+        await session.commit()
 
 
 async def run_forever(
@@ -100,7 +138,7 @@ async def run_forever(
             continue
 
         try:
-            await process_job(job_id)
+            await process_job(job_id, session_factory=active_session_factory)
         except Exception as exc:
             async with active_session_factory() as session:
                 await _set_job_status(session, job_id, status=FAILED_STATUS, error=str(exc))

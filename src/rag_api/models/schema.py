@@ -66,7 +66,7 @@ class Chunk(Base):
     start_char: Mapped[int] = mapped_column(Integer, nullable=False)
     end_char: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[str] = mapped_column(Vector(768), nullable=False)
+    embedding: Mapped[str | None] = mapped_column(Vector(768), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
