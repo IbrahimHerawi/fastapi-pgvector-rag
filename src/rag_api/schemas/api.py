@@ -35,17 +35,21 @@ class DocumentCreateResponse(APIModel):
     created_at: datetime | None = None
 
 
-class DocumentResponse(APIModel):
+class DocumentMetadataResponse(APIModel):
     id: UUID = Field(validation_alias=AliasChoices("id", "document_id"))
     title: TitleStr
     source: SourceStr
-    content: ContentStr
     content_sha256: Sha256Str
     created_at: datetime
     ingestion_status: StatusStr | None = Field(
         default=None,
         validation_alias=AliasChoices("ingestion_status", "status"),
     )
+    content: ContentStr | None = None
+
+
+class DocumentResponse(DocumentMetadataResponse):
+    content: ContentStr
 
 
 class Source(APIModel):
@@ -92,4 +96,3 @@ class QueryLogResponse(APIModel):
 
 
 AskSource = Source
-
