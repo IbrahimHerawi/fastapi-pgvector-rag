@@ -20,6 +20,7 @@ from rag_api.schemas import (
     DocumentCreateRequest,
     DocumentJobStatusResponse,
     DocumentMetadataResponse,
+    QueryLogResponse,
     Source,
 )
 from rag_api.services.generation import generate_answer
@@ -85,6 +86,18 @@ def _serialize_document_metadata(
         created_at=document.created_at,
         ingestion_status=ingestion_status,
         content=document.content if include_content else None,
+    )
+
+
+def _serialize_query_log(query_log: QueryLog) -> QueryLogResponse:
+    return QueryLogResponse(
+        id=query_log.id,
+        question=query_log.question,
+        answer=query_log.answer,
+        retrieved_chunk_ids=query_log.retrieved_chunk_ids,
+        models=query_log.models,
+        latency_ms=query_log.latency_ms,
+        created_at=query_log.created_at,
     )
 
 
@@ -173,6 +186,46 @@ async def get_document_status(
         status=ingestion_status,
         error=error if ingestion_status == "failed" else None,
     )
+
+
+@router.get(
+    "/queries",
+    response_model=list[QueryLogResponse],
+    response_model_exclude_none=True,
+)
+async def list_queries(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> list[QueryLogResponse]:
+    query = (
+        select(QueryLog)
+        .order_by(QueryLog.created_at.desc(), QueryLog.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await session.execute(query)
+    query_logs = result.scalars().all()
+    return [_serialize_query_log(query_log) for query_log in query_logs]
+
+
+@router.get(
+    "/queries/{query_id}",
+    response_model=QueryLogResponse,
+    response_model_exclude_none=True,
+)
+async def get_query(
+    query_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> QueryLogResponse:
+    query_log = await session.get(QueryLog, query_id)
+    if query_log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Query not found.",
+        )
+
+    return _serialize_query_log(query_log)
 
 
 def _resolve_top_k(requested_top_k: int | None) -> int:
