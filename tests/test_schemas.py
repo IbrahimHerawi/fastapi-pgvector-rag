@@ -111,6 +111,8 @@ def test_ask_response_valid_with_sources() -> None:
                 "document_title": "Security Runbook",
                 "source": "https://example.com/security-runbook",
                 "chunk_index": 0,
+                "start_char": 0,
+                "end_char": 44,
                 "text": "Use the secrets manager rotation endpoint.",
                 "score": 0.88,
             }
@@ -136,6 +138,8 @@ def test_ask_response_invalid_raises_validation_error() -> None:
                     "title": "Security Runbook",
                     "source": "https://example.com/security-runbook",
                     "chunk_index": 0,
+                    "start_char": 0,
+                    "end_char": 44,
                     "snippet": "Use the secrets manager rotation endpoint.",
                     "score": 2.0,
                 }
@@ -174,4 +178,3 @@ def test_query_log_response_invalid_raises_validation_error() -> None:
             latency_ms=-1,
             created_at=datetime.now(UTC),
         )
-

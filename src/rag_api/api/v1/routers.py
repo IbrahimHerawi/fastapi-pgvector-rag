@@ -1,23 +1,32 @@
 """Versioned API routers."""
 
 from hashlib import sha256
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag_api.api.deps import require_api_key
 from rag_api.core.config import get_settings
 from rag_api.core.db import get_session
-from rag_api.models.schema import Document, IngestionJob
+from rag_api.models.schema import Chunk, Document, IngestionJob
 from rag_api.schemas import (
+    AskRequest,
+    AskResponse,
     DocumentCreateRequest,
     DocumentJobStatusResponse,
     DocumentMetadataResponse,
+    Source,
 )
+from rag_api.services.generation import generate_answer
+from rag_api.services.ollama_client import OllamaClient
+from rag_api.services.retrieval import MAX_RETRIEVAL_TOP_K, retrieve_chunks
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
+SOURCE_SNIPPET_CHARS = 240
 
 
 @router.get("/health")
@@ -162,4 +171,104 @@ async def get_document_status(
     return DocumentJobStatusResponse(
         status=ingestion_status,
         error=error if ingestion_status == "failed" else None,
+    )
+
+
+def _resolve_top_k(requested_top_k: int | None) -> int:
+    configured_top_k = get_settings().RETRIEVE_TOP_K if requested_top_k is None else requested_top_k
+    return min(max(configured_top_k, 1), MAX_RETRIEVAL_TOP_K)
+
+
+def _build_source_snippet(text: str) -> str:
+    snippet = text[:SOURCE_SNIPPET_CHARS].strip()
+    if snippet:
+        return snippet
+    return text[:SOURCE_SNIPPET_CHARS]
+
+
+async def _load_documents_for_chunks(
+    session: AsyncSession,
+    chunks: list[Chunk],
+) -> dict[UUID, tuple[str, str]]:
+    if not chunks:
+        return {}
+
+    document_ids = {chunk.document_id for chunk in chunks}
+    document_rows = await session.execute(
+        select(Document.id, Document.title, Document.source).where(Document.id.in_(document_ids))
+    )
+    return {doc_id: (title, source) for doc_id, title, source in document_rows}
+
+
+@router.post(
+    "/ask",
+    response_model=AskResponse,
+    response_model_exclude_none=True,
+)
+async def ask_question(
+    payload: dict[str, Any],
+    session: AsyncSession = Depends(get_session),
+) -> AskResponse:
+    try:
+        request = AskRequest.model_validate(payload)
+    except ValidationError as exc:
+        first_error = exc.errors()[0] if exc.errors() else {}
+        message = first_error.get("msg", "Invalid ask payload.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid ask payload: {message}",
+        ) from exc
+
+    question = request.question
+    top_k = _resolve_top_k(request.top_k)
+
+    async with OllamaClient() as ollama_client:
+        query_vectors = await ollama_client.embed_texts([question])
+
+    if not query_vectors:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Embedding service returned no vectors for question.",
+        )
+
+    retrieved_chunks = await retrieve_chunks(
+        session=session,
+        query_embedding=query_vectors[0],
+        top_k=top_k,
+    )
+    doc_map = await _load_documents_for_chunks(session, retrieved_chunks)
+
+    retrieved_sources: list[dict[str, Any]] = []
+    for chunk in retrieved_chunks:
+        title, source = doc_map.get(chunk.document_id, ("Untitled", "unknown"))
+        retrieved_sources.append(
+            {
+                "chunk_id": chunk.id,
+                "document_id": chunk.document_id,
+                "title": title,
+                "source": source,
+                "chunk_index": chunk.chunk_index,
+                "start_char": chunk.start_char,
+                "end_char": chunk.end_char,
+                "text": chunk.text,
+            }
+        )
+
+    answer = await generate_answer(question, retrieved_sources)
+
+    return AskResponse(
+        answer=answer,
+        sources=[
+            Source(
+                chunk_id=source["chunk_id"],
+                document_id=source["document_id"],
+                title=source["title"],
+                source=source["source"],
+                chunk_index=source["chunk_index"],
+                start_char=source["start_char"],
+                end_char=source["end_char"],
+                snippet=_build_source_snippet(str(source["text"])),
+            )
+            for source in retrieved_sources
+        ],
     )

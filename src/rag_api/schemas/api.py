@@ -6,7 +6,15 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 TitleStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
 SourceStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024)]
@@ -59,17 +67,28 @@ class DocumentJobStatusResponse(APIModel):
 
 class Source(APIModel):
     chunk_id: UUID
-    document_id: UUID
+    document_id: UUID = Field(
+        validation_alias=AliasChoices("document_id", "doc_id"),
+        serialization_alias="doc_id",
+    )
     title: TitleStr = Field(validation_alias=AliasChoices("title", "document_title"))
     source: SourceStr
     chunk_index: int = Field(ge=0)
+    start_char: int = Field(ge=0)
+    end_char: int = Field(ge=0)
     snippet: NonEmptyStr = Field(validation_alias=AliasChoices("snippet", "text"))
-    score: float = Field(ge=0.0, le=1.0)
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_offsets(self) -> Source:
+        if self.end_char < self.start_char:
+            raise ValueError("end_char must be greater than or equal to start_char")
+        return self
 
 
 class AskRequest(APIModel):
     question: QuestionStr
-    top_k: int | None = Field(default=None, ge=1, le=50)
+    top_k: int | None = Field(default=None, ge=1)
 
 
 class AskResponse(APIModel):
