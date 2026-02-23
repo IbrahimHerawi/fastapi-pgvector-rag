@@ -200,5 +200,6 @@ uv run pytest -q
 - Postgres is published on `127.0.0.1:${POSTGRES_HOST_PORT}`.
 - Host tooling uses `DATABASE_URL` / `TEST_DATABASE_URL`.
 - Container services use `DOCKER_DATABASE_URL` and `DOCKER_OLLAMA_BASE_URL`.
+- If `/ask` returns `external_service_unavailable` on slower hardware, increase `REQUEST_TIMEOUT_S` in `.env` (default is `120`).
 - Runtime settings auto-load `.env`.
 - Alembic supports `-x dburl=main|test|<full-url>|<env-var-name>`.

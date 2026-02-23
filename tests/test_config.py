@@ -49,7 +49,7 @@ def test_settings_defaults_load(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.CHUNK_MAX_CHARS == 1200
     assert settings.CHUNK_OVERLAP_CHARS == 200
     assert settings.RETRIEVE_TOP_K == 5
-    assert settings.REQUEST_TIMEOUT_S == 30
+    assert settings.REQUEST_TIMEOUT_S == 120
     assert settings.MAX_DOC_CHARS == 200000
     assert settings.API_KEY is None
 

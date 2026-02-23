@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # Retrieval/runtime
     RETRIEVE_TOP_K: int = 5
-    REQUEST_TIMEOUT_S: int = 30
+    REQUEST_TIMEOUT_S: int = 120
 
 
 def get_settings() -> Settings:
