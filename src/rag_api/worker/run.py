@@ -12,7 +12,8 @@ from uuid import UUID
 from sqlalchemy import select, text
 
 from rag_api.core.config import get_settings
-from rag_api.core.db import SessionLocal
+from rag_api.core.db import SessionLocal, is_database_unavailable_error
+from rag_api.core.logging import configure_logging
 from rag_api.models.schema import Chunk, Document, IngestionJob
 from rag_api.services.chunking import chunk
 from rag_api.services.ollama_client import OllamaClient
@@ -25,6 +26,7 @@ PROCESSING_STATUS = "processing"
 DONE_STATUS = "done"
 FAILED_STATUS = "failed"
 DEFAULT_IDLE_BACKOFF_SECONDS = 1.0
+DEFAULT_DB_ERROR_MAX_BACKOFF_SECONDS = 30.0
 EMBED_BATCH_SIZE = 32
 
 _running = True
@@ -181,10 +183,26 @@ async def run_forever(
     """Continuously claim, process, and finalize ingestion jobs."""
 
     active_session_factory = session_factory or _require_session_factory()
+    db_backoff_seconds = max(idle_backoff_seconds, 1.0)
 
     while _running:
-        async with active_session_factory() as session:
-            job_id = await claim_pending_job(session)
+        try:
+            async with active_session_factory() as session:
+                job_id = await claim_pending_job(session)
+            db_backoff_seconds = max(idle_backoff_seconds, 1.0)
+        except Exception as exc:
+            if not is_database_unavailable_error(exc):
+                raise
+            print(
+                "Database unavailable while claiming jobs. "
+                f"Retrying in {db_backoff_seconds:.1f}s."
+            )
+            await asyncio.sleep(db_backoff_seconds)
+            db_backoff_seconds = min(
+                DEFAULT_DB_ERROR_MAX_BACKOFF_SECONDS,
+                db_backoff_seconds * 2,
+            )
+            continue
 
         if job_id is None:
             await asyncio.sleep(idle_backoff_seconds)
@@ -192,11 +210,26 @@ async def run_forever(
 
         try:
             await process_job(job_id, session_factory=active_session_factory)
-        except Exception:
+            db_backoff_seconds = max(idle_backoff_seconds, 1.0)
+        except Exception as exc:
+            if is_database_unavailable_error(exc):
+                print(
+                    f"Database unavailable while processing job {job_id}. "
+                    f"Retrying in {db_backoff_seconds:.1f}s."
+                )
+                await asyncio.sleep(db_backoff_seconds)
+                db_backoff_seconds = min(
+                    DEFAULT_DB_ERROR_MAX_BACKOFF_SECONDS,
+                    db_backoff_seconds * 2,
+                )
+                continue
             continue
 
 
 def main() -> None:
+    settings = get_settings()
+    configure_logging(level=settings.LOG_LEVEL)
+
     signal.signal(signal.SIGINT, _shutdown_handler)
     signal.signal(signal.SIGTERM, _shutdown_handler)
 

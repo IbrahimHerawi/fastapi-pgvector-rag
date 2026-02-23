@@ -11,6 +11,12 @@ from fastapi.responses import JSONResponse
 
 from rag_api.core.logging import get_request_id
 
+try:
+    from sqlalchemy.exc import InterfaceError, OperationalError
+except ModuleNotFoundError:
+    InterfaceError = None  # type: ignore[assignment]
+    OperationalError = None  # type: ignore[assignment]
+
 REQUEST_ID_HEADER = "X-Request-ID"
 _DEFAULT_HTTP_MESSAGE = "Request failed."
 _DEFAULT_VALIDATION_MESSAGE = "Request validation failed."
@@ -62,6 +68,12 @@ class ExternalServiceUnavailable(APIError):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     error_code = "external_service_unavailable"
     default_message = "External service unavailable."
+
+
+class DatabaseUnavailable(APIError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    error_code = "database_unavailable"
+    default_message = "Database unavailable."
 
 
 class ConfigurationError(RagAPIError):
@@ -167,3 +179,21 @@ def register_exception_handlers(app: FastAPI) -> None:
             ),
             headers={REQUEST_ID_HEADER: request_id},
         )
+
+    async def _handle_database_exception(request: Request, _exc: Exception) -> JSONResponse:
+        request_id = _resolve_request_id(request)
+        database_error = DatabaseUnavailable()
+        return JSONResponse(
+            status_code=database_error.status_code,
+            content=_error_payload(
+                code=database_error.code,
+                message=database_error.message,
+                request_id=request_id,
+            ),
+            headers={REQUEST_ID_HEADER: request_id},
+        )
+
+    if OperationalError is not None:
+        app.add_exception_handler(OperationalError, _handle_database_exception)
+    if InterfaceError is not None:
+        app.add_exception_handler(InterfaceError, _handle_database_exception)

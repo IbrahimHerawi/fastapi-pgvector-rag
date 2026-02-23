@@ -9,6 +9,12 @@ ENV_KEYS = (
     "DATABASE_URL",
     "TEST_DATABASE_URL",
     "OLLAMA_BASE_URL",
+    "LOG_LEVEL",
+    "DB_CONNECT_TIMEOUT_S",
+    "DB_RETRY_ATTEMPTS",
+    "DB_RETRY_BACKOFF_S",
+    "DB_RETRY_MAX_BACKOFF_S",
+    "STARTUP_CHECKS_ENABLED",
     "OLLAMA_CHAT_MODEL",
     "OLLAMA_EMBED_MODEL",
     "EMBED_DIM",
@@ -31,6 +37,12 @@ def test_settings_defaults_load(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.DATABASE_URL == "postgresql+psycopg://postgres:postgres@postgres:5432/rag"
     assert settings.TEST_DATABASE_URL is None
     assert settings.OLLAMA_BASE_URL == "http://ollama:11434"
+    assert settings.LOG_LEVEL == "INFO"
+    assert settings.DB_CONNECT_TIMEOUT_S == 3
+    assert settings.DB_RETRY_ATTEMPTS == 2
+    assert settings.DB_RETRY_BACKOFF_S == 0.25
+    assert settings.DB_RETRY_MAX_BACKOFF_S == 2.0
+    assert settings.STARTUP_CHECKS_ENABLED is True
     assert settings.OLLAMA_CHAT_MODEL == "llama3.1:8b"
     assert settings.OLLAMA_EMBED_MODEL == "nomic-embed-text"
     assert settings.EMBED_DIM == 768
@@ -47,6 +59,12 @@ def test_settings_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/custom")
     monkeypatch.setenv("TEST_DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/custom_test")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("DB_CONNECT_TIMEOUT_S", "7")
+    monkeypatch.setenv("DB_RETRY_ATTEMPTS", "5")
+    monkeypatch.setenv("DB_RETRY_BACKOFF_S", "0.1")
+    monkeypatch.setenv("DB_RETRY_MAX_BACKOFF_S", "3.5")
+    monkeypatch.setenv("STARTUP_CHECKS_ENABLED", "false")
     monkeypatch.setenv("OLLAMA_CHAT_MODEL", "qwen2.5:7b")
     monkeypatch.setenv("OLLAMA_EMBED_MODEL", "mxbai-embed-large")
     monkeypatch.setenv("EMBED_DIM", "1024")
@@ -63,6 +81,12 @@ def test_settings_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.DATABASE_URL == "postgresql+psycopg://user:pass@localhost:5432/custom"
     assert settings.TEST_DATABASE_URL == "postgresql+psycopg://user:pass@localhost:5432/custom_test"
     assert settings.OLLAMA_BASE_URL == "http://localhost:11434"
+    assert settings.LOG_LEVEL == "DEBUG"
+    assert settings.DB_CONNECT_TIMEOUT_S == 7
+    assert settings.DB_RETRY_ATTEMPTS == 5
+    assert settings.DB_RETRY_BACKOFF_S == 0.1
+    assert settings.DB_RETRY_MAX_BACKOFF_S == 3.5
+    assert settings.STARTUP_CHECKS_ENABLED is False
     assert settings.OLLAMA_CHAT_MODEL == "qwen2.5:7b"
     assert settings.OLLAMA_EMBED_MODEL == "mxbai-embed-large"
     assert settings.EMBED_DIM == 1024

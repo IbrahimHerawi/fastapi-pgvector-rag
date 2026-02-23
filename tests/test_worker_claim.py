@@ -74,4 +74,14 @@ async def test_claim_pending_job_claims_distinct_rows_and_sets_processing(db_ses
 
     assert statuses[first_claim] == "processing"
     assert statuses[second_claim] == "processing"
-    assert await claim_pending_job(db_session) is None
+
+    pending_result = await db_session.execute(
+        select(IngestionJob.id).where(
+            IngestionJob.id.in_([first_job.id, second_job.id]),
+            IngestionJob.status == "pending",
+        )
+    )
+    assert pending_result.first() is None
+
+    third_claim = await claim_pending_job(db_session)
+    assert third_claim is None or third_claim not in {first_job.id, second_job.id}

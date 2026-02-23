@@ -19,7 +19,7 @@ from pydantic import (
 TitleStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
 SourceStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024)]
 ContentStr = Annotated[str, StringConstraints(min_length=1, max_length=200_000)]
-QuestionStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8_000)]
+QuestionStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=5_000)]
 AnswerStr = Annotated[str, StringConstraints(min_length=1)]
 StatusStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 Sha256Str = Annotated[str, StringConstraints(pattern=r"^[A-Fa-f0-9]{64}$")]

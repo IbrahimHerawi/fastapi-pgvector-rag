@@ -19,11 +19,17 @@ class Settings(BaseSettings):
     APP_ENV: str = "dev"
     API_V1_PREFIX: str = "/api/v1"
     API_KEY: Optional[str] = None
+    LOG_LEVEL: str = "INFO"
 
     # Infrastructure defaults aligned with local Docker service names.
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@postgres:5432/rag"
     TEST_DATABASE_URL: Optional[str] = None
     OLLAMA_BASE_URL: str = "http://ollama:11434"
+    DB_CONNECT_TIMEOUT_S: int = 3
+    DB_RETRY_ATTEMPTS: int = 2
+    DB_RETRY_BACKOFF_S: float = 0.25
+    DB_RETRY_MAX_BACKOFF_S: float = 2.0
+    STARTUP_CHECKS_ENABLED: bool = True
 
     # Models
     OLLAMA_CHAT_MODEL: str = "llama3.1:8b"

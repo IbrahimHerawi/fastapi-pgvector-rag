@@ -12,6 +12,8 @@ from httpx import ASGITransport, AsyncClient
 
 pytest.importorskip("sqlalchemy")
 
+from sqlalchemy import func, select
+
 from rag_api.core.db import get_session
 from rag_api.models.schema import Document, IngestionJob
 from rag_api.main import app
@@ -59,6 +61,14 @@ async def _insert_document(
     return document
 
 
+async def _next_created_at_anchor(db_session: Any) -> datetime:
+    result = await db_session.execute(select(func.max(Document.created_at)))
+    latest_created_at = result.scalar_one_or_none()
+    if latest_created_at is None:
+        return datetime(2026, 1, 1, tzinfo=UTC)
+    return latest_created_at + timedelta(minutes=3)
+
+
 @pytest.mark.asyncio
 async def test_documents_list_pagination_returns_expected_count_and_order(
     db_session: Any,
@@ -66,7 +76,7 @@ async def test_documents_list_pagination_returns_expected_count_and_order(
 ) -> None:
     monkeypatch.setenv("API_KEY", "")
 
-    base_time = datetime(2026, 1, 1, tzinfo=UTC)
+    base_time = await _next_created_at_anchor(db_session)
     oldest = await _insert_document(
         db_session,
         title="Oldest doc",
