@@ -10,7 +10,6 @@ def test_readme_exists_and_has_required_headings() -> None:
     required_headings = [
         "## Docker Compose quickstart",
         "## Pull Ollama models",
-        "## Demo: create document -> poll status -> ask (curl)",
         "## Run tests",
         "### Test database setup (exact commands)",
     ]

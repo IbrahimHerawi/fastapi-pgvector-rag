@@ -1,4 +1,5 @@
 #!/bin/sh
+# Safe to run repeatedly from the README quickstart and test setup.
 set -eu
 
 postgres_user="${POSTGRES_USER:-postgres}"
