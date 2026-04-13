@@ -1,3 +1,10 @@
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
+x-app-image: &app-image
+  image: fastapi-pgvector-rag:local
+
 services:
   db:
     image: ${POSTGRES_IMAGE}
@@ -26,10 +33,8 @@ services:
       - ollama_data:/root/.ollama
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: fastapi-pgvector-rag:local
+    <<: *app-image
+    build: *app-build
     depends_on:
       db:
         condition: service_healthy
@@ -42,7 +47,8 @@ services:
     command: ["uv", "run", "--no-dev", "python", "-m", "uvicorn", "rag_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   worker:
-    image: fastapi-pgvector-rag:local
+    <<: *app-image
+    pull_policy: never
     depends_on:
       db:
         condition: service_healthy

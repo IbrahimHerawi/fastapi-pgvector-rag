@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# Minimal host-side Docker Compose sanity check.
 set -eu
 
 echo "==> Validating docker-compose.yml"

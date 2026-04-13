@@ -54,13 +54,13 @@ The ingestion and query flow is:
 
 ## Docker Compose quickstart
 
-1. Create your local env file:
+1. If this is your first clone and `.env` does not exist yet, create it from the example:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-2. Install Python deps (needed for Alembic and tests):
+2. Install host-side Python deps (used by Alembic, the demo script, and tests):
 
 ```powershell
 uv sync --dev
@@ -72,33 +72,51 @@ uv sync --dev
 docker compose up -d db ollama
 ```
 
-4. Ensure the test DB exists (`rag_test`, safe to run repeatedly):
+4. Wait until Postgres is healthy before running init or migration commands:
+
+```powershell
+docker compose ps
+```
+
+Continue when the `db` service shows `healthy`.
+
+5. Ensure the test DB exists (`rag_test`, safe to run repeatedly):
 
 ```powershell
 docker compose exec -T db sh /docker-entrypoint-initdb.d/20-init-test-db.sh
 ```
 
-5. Run migrations for the main app DB (`rag`):
+6. Run migrations for the main app DB (`rag`):
 
 ```powershell
 uv run python -m alembic -x dburl=main upgrade head
 ```
 
-6. Start API + worker:
+7. Build the local app image and start the API + worker:
 
 ```powershell
 docker compose up -d --build api worker
 ```
 
-7. Verify API health:
+8. Verify container state:
+
+```powershell
+docker compose ps
+```
+
+You should see `db` as `healthy` and `api`, `worker`, and `ollama` as `Up`.
+
+9. Verify API health:
 
 ```powershell
 curl.exe -sS http://127.0.0.1:8000/api/v1/health
 ```
 
+The `/ask` flow will not work until the Ollama models in the next section are pulled successfully.
+
 ## Pull Ollama models
 
-Pull the models configured in `.env` (defaults shown here):
+Pull the models configured in `.env` (defaults shown here). Run these after the `ollama` container is up; the first pull can take a while.
 
 ```powershell
 docker compose exec ollama ollama pull nomic-embed-text
@@ -121,74 +139,37 @@ Optional flags:
 uv run python scripts/demo/run_demo.py --api-key "your-key" --question "What does this project use for vector search?"
 ```
 
-## Demo: create document -> poll status -> ask (curl)
-
-Use this if you want explicit API calls instead of the demo script.
-If `API_KEY` is set in `.env`, add `-H "X-API-Key: <value>"` to each request.
-
-```powershell
-$BaseUrl = "http://127.0.0.1:8000/api/v1"
-
-$createPayload = @'
-{
-  "title": "RAG quickstart note",
-  "source": "readme-demo",
-  "content": "pgvector stores embeddings in Postgres. The worker chunks and embeds documents using Ollama."
-}
-'@
-
-$create = curl.exe -sS -X POST "$BaseUrl/documents" `
-  -H "Content-Type: application/json" `
-  --data "$createPayload" | ConvertFrom-Json
-
-$create | ConvertTo-Json
-$documentId = $create.document_id
-```
-
-```powershell
-do {
-  Start-Sleep -Seconds 1
-  $status = curl.exe -sS "$BaseUrl/documents/$documentId/status" | ConvertFrom-Json
-  $status | ConvertTo-Json
-} while ($status.status -in @("pending", "processing"))
-```
-
-```powershell
-$askPayload = @'
-{
-  "question": "How are embeddings generated in this project?"
-}
-'@
-
-curl.exe -sS -X POST "$BaseUrl/ask" `
-  -H "Content-Type: application/json" `
-  --data "$askPayload"
-```
-
 ## Run tests
 
 ### Test database setup (exact commands)
 
-1. Start DB and ensure the test DB exists:
+1. Start the DB:
 
 ```powershell
 docker compose up -d db
+```
+
+2. Wait until Postgres is healthy:
+
+```powershell
+docker compose ps
+```
+
+Continue when the `db` service shows `healthy`.
+
+3. Ensure the test DB exists:
+
+```powershell
 docker compose exec -T db sh /docker-entrypoint-initdb.d/20-init-test-db.sh
 ```
 
-2. Set `TEST_DATABASE_URL` in your shell:
-
-```powershell
-$env:TEST_DATABASE_URL="postgresql+psycopg://postgres:postgres@127.0.0.1:55432/rag_test"
-```
-
-3. Run Alembic migrations against the test DB:
+4. Run Alembic migrations against the test DB configured in `.env`:
 
 ```powershell
 uv run python -m alembic -x dburl=test upgrade head
 ```
 
-4. Run tests:
+5. Run tests:
 
 ```powershell
 uv run pytest -q
